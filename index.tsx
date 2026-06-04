@@ -15,11 +15,11 @@ import {
   Atom
 } from "lucide-react";
 
-// =============== 核心配置：填写你的 CF 代理 ===============
+// =============== 核心配置 ===============
 const API_KEY = import.meta.env.VITE_API_KEY || "";
-const PROXY_HOST = "https://gemini-proxy.xyy.workers.dev"; // 你的CF域名
+const PROXY_HOST = "https://gemini-proxy.xyy.workers.dev";
 const API_URL = `${PROXY_HOST}/v1/models/gemini-1.5-flash:generateContent`;
-// ======================================================
+// ======================================
 
 const SYSTEM_INSTRUCTION = `
 你是一位拥有20年教研经验的初中物理特级教师，擅长通过“逆向思维”和“苏格拉底式提问”帮助学生掌握物理本质。
@@ -54,13 +54,17 @@ const MathText = ({ text, style }: { text: string; style?: React.CSSProperties }
         try {
           const html = katex.renderToString(math, { displayMode: true, throwOnError: false });
           return <div key={index} dangerouslySetInnerHTML={{ __html: html }} style={{ margin: '1em 0' }} />;
-        } catch (e) { return <code key={index}>{part}</code>; }
+        } catch (e) {
+          return <code key={index}>{part}</code>;
+        }
       } else if (part.startsWith("$") && part.endsWith("$")) {
         const math = part.slice(1, -1);
         try {
           const html = katex.renderToString(math, { displayMode: false, throwOnError: false });
           return <span key={index} dangerouslySetInnerHTML={{ __html: html }} />;
-        } catch (e) { return <code key={index}>{part}</code>; }
+        } catch (e) {
+          return <code key={index}>{part}</code>;
+        }
       }
       return <span key={index} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
     });
@@ -135,7 +139,6 @@ const App = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // =============== 原生请求，不走SDK，永远不报错 ===============
   const handleSend = async (manualText?: string) => {
     const textToSend = typeof manualText === 'string' ? manualText : input;
     if ((!textToSend.trim() && !selectedImage) || isLoading) return;
@@ -160,7 +163,16 @@ const App = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-          contents: [...contents, { role: "user", parts: [{ text: textToSend }, ...(newMessage.image ? [{ inline_data: { mime_type: "image/jpeg", data: newMessage.image.split(",")[1] } }] : [])] }]
+          contents: [
+            ...contents,
+            {
+              role: "user",
+              parts: [
+                { text: textToSend },
+                ...(newMessage.image ? [{ inline_data: { mime_type: "image/jpeg", data: newMessage.image.split(",")[1] } }] : [])
+              ]
+            }
+          ]
         })
       });
 
@@ -173,7 +185,6 @@ const App = () => {
       setIsLoading(false);
     }
   };
-  // ============================================================
 
   const renderMessageContent = (text: string) => {
     const match = text.match(/<exam_paper>([\s\S]*?)<\/exam_paper>/);
@@ -247,4 +258,4 @@ const App = () => {
 };
 
 const root = createRoot(document.getElementById("root")!);
-root.render(<App />
+root.render(<App />);
