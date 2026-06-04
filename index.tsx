@@ -25,31 +25,16 @@ import {
   Printer
 } from "lucide-react";
 
-const PROXY_URL = "https://gemini-proxy.xyy.workers.dev"; // 你的 Workers 代理地址
-
-const originalFetch = window.fetch;
-window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-  let url = typeof input === "string" ? input : input.toString();
-  
-  // 如果发现请求是指向 Google Gemini 接口的，强制替换为反代地址
-  if (url.includes("generativelanguage.googleapis.com")) {
-    url = url.replace("https://generativelanguage.googleapis.com", PROXY_URL);
-    
-    // 确保处理跨域请求预检 (OPTIONS)
-    if (init && init.headers) {
-      const headers = new Headers(init.headers);
-      // 可以在这里移除一些可能导致反代失败的敏感头部，交由 Workers 处理
-    }
-  }
-  
-  return originalFetch(url, init);
-};
-// ------------------------------------
-
-// Initialize Gemini API safely
 const getGeminiModel = () => {
-  // 既然已经用了反代，前端直接传一个固定占位符，防止编译期因环境变量缺失而报错
-  return new GoogleGenAI({ apiKey: "LOCAL_PROXY_PLACEHOLDER" });
+  // 注意：部分新版 SDK 允许在第二个参数或配置项里传入 baseUrl
+  // 如果你的 Workers 后面带了 /v1beta，请在 PROXY_URL 后面做好对应
+  const PROXY_URL = "https://gemini-proxy.xyy.workers.dev"; 
+
+  return new GoogleGenAI({ 
+    apiKey: "LOCAL_PROXY_PLACEHOLDER", // 占位符，交给 Workers 后端替换
+    // 强制指定 SDK 发起请求的根域名，直接把请求导向你的 Cloudflare Workers
+    baseUrl: PROXY_URL 
+  });
 };
 
 const ai = getGeminiModel();
