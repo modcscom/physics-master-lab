@@ -25,13 +25,32 @@ import {
   Printer
 } from "lucide-react";
 
+// --- 核心修改：全局拦截并强制走反代 ---
+const PROXY_URL = "https://gemini-proxy.xyy.workers.dev"; // 你的 Workers 代理地址
+
+const originalFetch = window.fetch;
+window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  let url = typeof input === "string" ? input : input.toString();
+  
+  // 如果发现请求是指向 Google Gemini 接口的，强制替换为反代地址
+  if (url.includes("generativelanguage.googleapis.com")) {
+    url = url.replace("https://generativelanguage.googleapis.com", PROXY_URL);
+    return originalFetch(url, init);
+  }
+  
+  return originalFetch(input, init);
+};
+// ------------------------------------
+
 // Initialize Gemini API safely
 const getGeminiModel = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.API_KEY; // 确保在 Vercel 环境变量中配置了 API_KEY
   if (!apiKey) {
     console.warn("Gemini API Key is missing. Please set GEMINI_API_KEY in .env");
     return null;
   }
+  
+  // 初始化官方 SDK，它在内部发起 fetch 时会被上面我们写好的拦截器自动代理
   return new GoogleGenAI({ apiKey });
 };
 
