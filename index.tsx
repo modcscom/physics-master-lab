@@ -29,10 +29,13 @@ import {
 const getGeminiModel = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    console.warn("Gemini API Key is missing. Please set GEMINI_API_KEY in .env");
+    console.warn("Gemini API Key 缺失");
     return null;
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({
+    apiKey,
+    baseUrl: "https://gemini-proxy.xyy.workers.dev",
+  });
 };
 
 const ai = getGeminiModel();
