@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 // --- 核心配置：完全走 Workers 反代，不再使用 window.fetch 拦截器 ---
-const response = await fetch("https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.5-flash:generateContent", {
+const PROXY_URL = "https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.5-flash:generateContent";
 
 // System Instruction
 const SYSTEM_INSTRUCTION = `
