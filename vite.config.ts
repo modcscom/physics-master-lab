@@ -13,10 +13,9 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        // 核心劫持：直接替换代码里的 process.env 和占位符字符串
+        // 确保 Key 是合法的全局对象标识符
         'process.env.API_KEY': JSON.stringify(finalApiKey),
-        'process.env.GEMINI_API_KEY': JSON.stringify(finalApiKey),
-        '"__VITE_API_KEY_PLACEHOLDER__"': JSON.stringify(finalApiKey) 
+        'process.env.GEMINI_API_KEY': JSON.stringify(finalApiKey)
       },
       resolve: {
         alias: {
