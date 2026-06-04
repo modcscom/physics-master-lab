@@ -25,19 +25,6 @@ import {
   Printer
 } from "lucide-react";
 
-const getGeminiModel = () => {
-  // 注意：部分新版 SDK 允许在第二个参数或配置项里传入 baseUrl
-  // 如果你的 Workers 后面带了 /v1beta，请在 PROXY_URL 后面做好对应
-  const PROXY_URL = "https://gemini-proxy.xyy.workers.dev"; 
-
-  return new GoogleGenAI({ 
-    apiKey: "LOCAL_PROXY_PLACEHOLDER", // 占位符，交给 Workers 后端替换
-    // 强制指定 SDK 发起请求的根域名，直接把请求导向你的 Cloudflare Workers
-    baseUrl: PROXY_URL 
-  });
-};
-
-const ai = getGeminiModel();
 
 // System Instruction
 const SYSTEM_INSTRUCTION = `
@@ -289,6 +276,7 @@ const App = () => {
     setIsLoading(true);
 
     try {
+      // 1. 构建符合谷歌 API 规范的历史上下文
       const historyParts = messages.map((msg) => {
         const parts: any[] = [];
         if (msg.image) {
@@ -302,6 +290,7 @@ const App = () => {
         return { role: msg.role, parts };
       });
 
+      // 2. 构建当前发送的消息内容
       const currentParts: any[] = [];
       if (newMessage.image) {
         const base64Data = newMessage.image.split(",")[1];
@@ -310,31 +299,28 @@ const App = () => {
       }
       if (newMessage.text) currentParts.push({ text: newMessage.text });
 
-      if (!ai) {
-        setMessages((prev) => [...prev, { role: "model", text: "⚠️ 未配置 API Key。请在项目根目录创建 .env 文件并设置 GEMINI_API_KEY。" }]);
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash", // Updated to latest stable model
-        contents: [...historyParts, { role: 'user', parts: currentParts }],
-        config: { systemInstruction: SYSTEM_INSTRUCTION },
+      // 3. 绕过 SDK，直接向你的 Cloudflare Workers 发起原生 Fetch 请求
+      const response = await fetch("https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.0-flash:generateContent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+          // 注意：无需传入 API Key，Workers 后端会自动重写追加真正的 Key 
+        },
+        body: JSON.stringify({
+          contents: [...historyParts, { role: newMessage.role, parts: currentParts }],
+          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
+        })
       });
 
-      const responseText = (typeof (response as any).text === "function") 
-      ? await (response as any).text() 
-      : (response.text || "...");
-      // Fixed: response.text is a function in newer SDKs? Checking docs. Actually in @google/genai 0.1+, it might be response.text(). Let's use generic access or check.
-      // Wait, in @google/genai, response.text is a function: response.text()
-      // The previous code used response.text as a property.
-      // Let's check the previous code: const responseText = response.text || "...";
-      // In the new @google/genai SDK, generateContent returns a GenerateContentResult.
-      // accessing .text is usually a getter or function.
-      // I will assume it's a function based on my knowledge of the new SDK, OR I should verify.
-      // Actually, let's stick to the previous property access if it was working, BUT the user just upgraded the SDK to `latest` (v1.21.0).
-      // In v1.21.0, `response.text` is a function `response.text()`.
-      // So I MUST fix this too.
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `HTTP 错误! 状态码: ${response.status}`);
+      }
+
+      const resJson = await response.json();
+      
+      // 4. 解析谷歌返回的标准 JSON 树状结构
+      const responseText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || "...";
 
       const mistakeMatch = responseText.match(/<mistake_entry>([\s\S]*?)<\/mistake_entry>/);
       if (mistakeMatch) {
