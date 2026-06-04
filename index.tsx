@@ -27,9 +27,15 @@ import {
 
 // Initialize Gemini API safely
 const getGeminiModel = () => {
-  const apiKey = process.env.API_KEY;
+  // 按照优先级尝试获取，总有一个能被上面的 Vite define 注入成功！
+  const apiKey = 
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) || 
+    (typeof import.meta !== 'undefined' && import.meta.env?.API_KEY) || 
+    (typeof process !== 'undefined' && process.env?.API_KEY) ||
+    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY);
+
   if (!apiKey) {
-    console.warn("Gemini API Key is missing. Please set GEMINI_API_KEY in .env");
+    console.warn("Gemini API Key is missing. Please check Vercel Environment Variables.");
     return null;
   }
   return new GoogleGenAI({ apiKey });
