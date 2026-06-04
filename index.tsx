@@ -32,9 +32,22 @@ const getGeminiModel = () => {
     console.warn("Gemini API Key 缺失");
     return null;
   }
+
+  // 关键：使用 fetch 手动转发，绕过 SDK 限制
+  const customFetch = async (input: RequestInfo, init?: RequestInit) => {
+    // 你的 CF 代理域名 👇 在这里填写
+    const proxyUrl = "https://gemini-proxy.xyy.workers.dev"; 
+    const originalUrl = input.toString();
+    const targetUrl = originalUrl.replace(
+      "https://generativelanguage.googleapis.com",
+      proxyUrl
+    );
+    return fetch(targetUrl, init);
+  };
+
   return new GoogleGenAI({
     apiKey,
-    baseUrl: "https://gemini-proxy.xyy.workers.dev",
+    fetch: customFetch, // 强制走代理，无类型错误
   });
 };
 
