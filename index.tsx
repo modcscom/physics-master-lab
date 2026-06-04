@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI } from "@google/genai";
 import katex from "katex";
 import {
   LayoutDashboard,
@@ -25,6 +24,8 @@ import {
   Printer
 } from "lucide-react";
 
+// --- 核心配置：完全走 Workers 反代，不再使用 window.fetch 拦截器 ---
+const PROXY_URL = "https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.0-flash:generateContent";
 
 // System Instruction
 const SYSTEM_INSTRUCTION = `
@@ -57,7 +58,7 @@ type Mistake = {
   topic: string;
   reason: string;
   advice: string;
-};
+ };
 
 type View = "dashboard" | "chat" | "formulas" | "archive";
 
@@ -157,7 +158,6 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
 
 // --- Modal Component ---
 
-// Added semicolon to type definition and made children optional to fix "missing children" error in JSX usage on line 373
 const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode }) => {
   if (!isOpen) return null;
   return (
@@ -276,7 +276,7 @@ const App = () => {
     setIsLoading(true);
 
     try {
-      // 1. 构建符合谷歌 API 规范的历史上下文
+      // 1. 组装历史聊天记录（格式匹配谷歌官方底层 API）
       const historyParts = messages.map((msg) => {
         const parts: any[] = [];
         if (msg.image) {
@@ -287,10 +287,11 @@ const App = () => {
         if (msg.text) {
           parts.push({ text: msg.text.replace(/<mistake_entry>[\s\S]*?<\/mistake_entry>/g, "") });
         }
+        // 注意：底层接口接收格式为 'user' 和 'model'
         return { role: msg.role, parts };
       });
 
-      // 2. 构建当前发送的消息内容
+      // 2. 组装当前用户发送的内容
       const currentParts: any[] = [];
       if (newMessage.image) {
         const base64Data = newMessage.image.split(",")[1];
@@ -299,27 +300,27 @@ const App = () => {
       }
       if (newMessage.text) currentParts.push({ text: newMessage.text });
 
-      // 3. 绕过 SDK，直接向你的 Cloudflare Workers 发起原生 Fetch 请求
-      const response = await fetch("https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.0-flash:generateContent", {
+      // 3. 绕过 SDK，直接发起原生 fetch 请求直连 Workers 代理
+      const response = await fetch(PROXY_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
-          // 注意：无需传入 API Key，Workers 后端会自动重写追加真正的 Key 
+          // 这里无需任何 API Key，Workers 后端会自动在 search 路径中强行写入真实的 Key
         },
         body: JSON.stringify({
-          contents: [...historyParts, { role: newMessage.role, parts: currentParts }],
+          contents: [...historyParts, { role: 'user', parts: currentParts }],
           systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error?.message || `HTTP 错误! 状态码: ${response.status}`);
+        throw new Error(errorData.error?.message || `请求失败，状态码: ${response.status}`);
       }
 
       const resJson = await response.json();
       
-      // 4. 解析谷歌返回的标准 JSON 树状结构
+      // 4. 解析标准谷歌 API 树状返回结构
       const responseText = resJson.candidates?.[0]?.content?.parts?.[0]?.text || "...";
 
       const mistakeMatch = responseText.match(/<mistake_entry>([\s\S]*?)<\/mistake_entry>/);
@@ -478,9 +479,9 @@ const App = () => {
           <div className="fade-in" style={{ padding: '40px', overflowY: 'auto', height: '100%' }}>
             <h2 style={{ marginBottom: '32px' }}>公式基座</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '24px' }}>
-              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>动能定理</h4><MathText text="$$W = \Delta E_k = \frac{1}{2}mv^2 - \frac{1}{2}mv_0^2$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>合外力做的功等于物体动能的变化量。</p></div>
-              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>热量公式</h4><MathText text="$$Q = cm\Delta t$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>物质吸放热计算，c为比热容。</p></div>
-              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>电功率</h4><MathText text="$$P = UI = I^2R = \frac{U^2}{R}$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>描述电流做功的快慢。</p></div>
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>动能定理</h4><MathText text="$$W = \\Delta E_k = \\frac{1}{2}mv^2 - \\frac{1}{2}mv_0^2$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>合外力做的功等于物体动能的变化量。</p></div>
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>热量公式</h4><MathText text="$$Q = cm\\Delta t$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>物质吸放热计算，c为比热容。</p></div>
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}><h4 style={{ color: '#38bdf8', margin: '0 0 12px 0' }}>电功率</h4><MathText text="$$P = UI = I^2R = \\frac{U^2}{R}$$" /><p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>描述电流做功的快慢。</p></div>
             </div>
           </div>
         )}
