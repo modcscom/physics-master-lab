@@ -27,13 +27,9 @@ import {
 
 // Initialize Gemini API safely
 const getGeminiModel = () => {
-  // 绕过 TS 严格检查，直接读取被 Vite 替换的 process.env.API_KEY
-  const apiKey = 
-    (typeof globalThis !== 'undefined' && (globalThis as any).process?.env?.API_KEY) ||
-    (typeof process !== 'undefined' && process.env?.API_KEY);
-
+  const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    console.warn("Gemini API Key is missing. Please check Vercel Environment Variables.");
+    console.warn("Gemini API Key is missing. Please set GEMINI_API_KEY in .env");
     return null;
   }
   return new GoogleGenAI({ apiKey });
