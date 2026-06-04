@@ -27,14 +27,15 @@ import {
 
 // Initialize Gemini API safely
 const getGeminiModel = () => {
-  // 按照优先级尝试获取，总有一个能被上面的 Vite define 注入成功！
+  // 绕过 TypeScript 对 import.meta.env 的严格类型检查
+  // 这里的字符串会在打包时，被 Vite 的 define 插件直接替换为真实的 API Key 字符串
   const apiKey = 
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) || 
-    (typeof import.meta !== 'undefined' && import.meta.env?.API_KEY) || 
-    (typeof process !== 'undefined' && process.env?.API_KEY) ||
-    (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY);
+    (typeof process !== 'undefined' && process.env?.API_KEY) || 
+    (typeof window !== 'undefined' && (window as any).process?.env?.API_KEY) ||
+    "__VITE_API_KEY_PLACEHOLDER__"; // 这是一个后备占位符
 
-  if (!apiKey) {
+  // 检查是否拿到了有效 Key（排除未替换的占位符）
+  if (!apiKey || apiKey === "__VITE_API_KEY_PLACEHOLDER__") {
     console.warn("Gemini API Key is missing. Please check Vercel Environment Variables.");
     return null;
   }
