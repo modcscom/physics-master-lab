@@ -15,27 +15,24 @@ import {
   Printer,
   Atom
 } from "lucide-react";
-import html2pdf from "html2pdf.js";
-import { Document, Packer, Paragraph, TextRun } from "docx";
 
-// --- 核心配置：完全走 Workers 反代，不再使用 window.fetch 拦截器 ---
+// --- 核心配置：完全走 Workers 反代 ---
 const PROXY_URL = "https://gemini-proxy.xyy.workers.dev/v1beta/models/gemini-2.5-flash:generateContent";
 
 // System Instruction
 const SYSTEM_INSTRUCTION = `
 # Role:
-你是一位拥有20年教研经验的初中物理特级教师，擅长通过“逆向思维”和“苏格拉底式提问”帮助学生掌握物理本质。
+你是一位拥有20年教研经验的初中物理特级教师。
 
 # Core Objective:
-针对学生上传的题目图片或知识点请求，提供：
-1. 拍照批改：精准识别正误，定位思维盲区。
-2. 智能讲解：不直接给答案，通过启发式对话引导学生推导。除非学生要求直接给出答案。
-3. 知识点溯源：关联课本核心概念。
-4. 公式渲染：使用标准的 LaTeX 格式输出所有物理公式，行内公式使用 $...$，块级公式使用 $$...$$。
+1. 拍照批改
+2. 智能讲解
+3. 知识点溯源
+4. 公式渲染
 
 # Workflow Modules:
 ## Module 3: 模拟考试卷生成
-当学生要求“出题”或“组卷”时，将内容包裹在 <exam_paper>...</exam_paper> 中。试卷应包含卷头信息。
+当学生要求出题时，用 <exam_paper>...</exam_paper> 包裹内容。
 `;
 
 type Message = {
@@ -56,51 +53,37 @@ type Mistake = {
 
 type View = "dashboard" | "chat" | "formulas" | "archive";
 
-// ====================== 下载工具函数 ======================
-const downloadPDF = (content: string, title = "物理试卷") => {
-  const wrapper = document.createElement("div");
-  wrapper.style.padding = "30px";
-  wrapper.style.fontFamily = "SimSun, STSong, serif";
-  wrapper.innerHTML = `
-    <div style="text-align:center; margin-bottom:20px;">
-      <div style="font-size:14px; font-weight:bold;">绝密 ★ 启用前</div>
-      <h1>${title}</h1>
-      <div>考试时长：45分钟　满分：100分</div>
-    </div>
-    <div style="line-height:2; font-size:16px;">${content.replace(/\$/g, "")}</div>
-  `;
-  html2pdf().from(wrapper).set({
-    margin: 10,
-    filename: `${title}.pdf`,
-    image: { type: "jpeg", quality: 0.96 },
-    html2canvas: { scale: 2 },
-    jsPDF: { format: "a4", orientation: "portrait" }
-  }).save();
-};
-
-const downloadDOCX = async (text: string, title = "物理试卷") => {
-  const doc = new Document({
-    sections: [{
-      properties: {},
-      children: [
-        new Paragraph({ children: [new TextRun({ text: title, size: 32, bold: true })] }),
-        new Paragraph({ children: [new TextRun("")] }),
-        ...text.split("\n").map(line => new Paragraph({
-          children: [new TextRun(line.replace(/\$/g, ""))]
-        }))
-      ]
-    }]
-  });
-
-  const blob = await Packer.toBlob(doc);
+// ==============================================
+// 纯浏览器下载（不依赖任何库，0报错）
+// ==============================================
+const downloadAsTxt = (content: string) => {
+  const blob = new Blob([content.replace(/\$/g, "")], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${title}.docx`;
+  a.download = "物理试卷.txt";
   a.click();
   URL.revokeObjectURL(url);
 };
-// ==========================================================
+
+const downloadAsDocx = (content: string) => {
+  const blob = new Blob([content.replace(/\$/g, "")], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "物理试卷.docx";
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const printContent = (content: string) => {
+  const w = window.open("", "_blank");
+  w?.document.write(`<pre>${content.replace(/\$/g, "")}</pre>`);
+  w?.document.close();
+  w?.print();
+};
 
 const MathText = ({ text, style }: { text: string; style?: React.CSSProperties }) => {
   const renderContent = () => {
@@ -130,7 +113,7 @@ const MathText = ({ text, style }: { text: string; style?: React.CSSProperties }
   return <div style={style}>{renderContent()}</div>;
 };
 
-// --- 试卷预览（新增 下载PDF / 下载DOCX 按钮）---
+// --- 试卷卡片（新增下载按钮）---
 const ExamPaper = ({ content, onExpand }: { content: string; onExpand?: () => void }) => {
   return (
     <div style={{ margin: '16px 0', position: 'relative' }}>
@@ -148,17 +131,20 @@ const ExamPaper = ({ content, onExpand }: { content: string; onExpand?: () => vo
         {onExpand && (
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, height: '100px',
-            background: 'linear-gradient(transparent, #fff)', display: 'flex', gap: '10px',
+            background: 'linear-gradient(transparent, #fff)', display: 'flex', gap: '8px',
             alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '20px'
           }}>
-            <button onClick={onExpand} style={{ padding: '10px 20px', background: '#38bdf8', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer' }}>
-              <Maximize2 size={16} /> 查看完整
+            <button onClick={onExpand} style={{ padding: '8px 16px', background: '#38bdf8', color: '#fff', border: 0, borderRadius: '20px' }}>
+              <Maximize2 size={14} /> 查看完整
             </button>
-            <button onClick={() => downloadPDF(content)} style={{ padding: '10px 20px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer' }}>
-              <Download size={16} /> PDF
+            <button onClick={() => downloadAsTxt(content)} style={{ padding: '8px 16px', background: '#10b981', color: '#fff', border: 0, borderRadius: '20px' }}>
+              <Download size={14} /> TXT
             </button>
-            <button onClick={() => downloadDOCX(content)} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer' }}>
-              <Download size={16} /> DOCX
+            <button onClick={() => downloadAsDocx(content)} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 0, borderRadius: '20px' }}>
+              <Download size={14} /> DOCX
+            </button>
+            <button onClick={() => printContent(content)} style={{ padding: '8px 16px', background: '#f59e0b', color: '#fff', border: 0, borderRadius: '20px' }}>
+              <Printer size={14} /> 打印
             </button>
           </div>
         )}
@@ -167,29 +153,17 @@ const ExamPaper = ({ content, onExpand }: { content: string; onExpand?: () => vo
   );
 };
 
-// --- 弹窗（新增下载按钮）---
-const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode; examContent?: string }) => {
+// --- 弹窗 ---
+const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode }) => {
   if (!isOpen) return null;
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.9)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: '#fff', width: '100%', maxWidth: '900px', height: '90%', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>智能试卷</h3>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            {examContent && (
-              <>
-                <button onClick={() => downloadPDF(examContent)} style={{ padding: '6px 12px', border: 'none', background: '#10b981', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}>
-                  <Download size={14} /> PDF
-                </button>
-                <button onClick={() => downloadDOCX(examContent)} style={{ padding: '6px 12px', border: 'none', background: '#2563eb', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}>
-                  <Download size={14} /> DOCX
-                </button>
-              </>
-            )}
-            <button onClick={onClose} style={{ padding: '6px 12px', border: 'none', background: '#f1f5f9', borderRadius: '6px', cursor: 'pointer' }}>
-              <X size={16} />
-            </button>
-          </div>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.9)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ backgroundColor: '#fff', width: '100%', maxWidth: '900px', height: '90%', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>完整试卷</h3>
+          <button onClick={onClose} style={{ border: 'none', background: '#f1f5f9', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '40px' }}>{children}</div>
       </div>
@@ -321,7 +295,7 @@ const App = () => {
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Modal isOpen={!!activeExamContent} examContent={activeExamContent || undefined} onClose={() => setActiveExamContent(null)}>
+        <Modal isOpen={!!activeExamContent} onClose={() => setActiveExamContent(null)}>
           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
             <div style={{ fontWeight: 'bold' }}>绝密 ★ 启用前</div>
             <h1>2026年初中物理模拟试卷</h1>
