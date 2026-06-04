@@ -44,14 +44,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
 // Initialize Gemini API safely
 const getGeminiModel = () => {
-  const apiKey = process.env.API_KEY; // 确保在 Vercel 环境变量中配置了 API_KEY
-  if (!apiKey) {
-    console.warn("Gemini API Key is missing. Please set GEMINI_API_KEY in .env");
-    return null;
-  }
-  
-  // 初始化官方 SDK，它在内部发起 fetch 时会被上面我们写好的拦截器自动代理
-  return new GoogleGenAI({ apiKey });
+  // 不再依赖前端的 process.env.API_KEY，直接给个占位符
+  return new GoogleGenAI({ apiKey: "PROXY_PLACEHOLDER" });
 };
 
 const ai = getGeminiModel();
