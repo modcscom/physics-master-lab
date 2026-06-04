@@ -25,7 +25,7 @@ import {
   Printer
 } from "lucide-react";
 
-// Initialize Gemini API safely
+// Initialize Gemini API safely — 已修复代理，无报错
 const getGeminiModel = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -33,10 +33,11 @@ const getGeminiModel = () => {
     return null;
   }
 
-  // 关键：使用 fetch 手动转发，绕过 SDK 限制
+  // ========== 在这里填写你的 CF 代理地址 ==========
+  const proxyUrl = "https://gemini-proxy.xyy.workers.dev"; 
+  // ==============================================
+
   const customFetch = async (input: RequestInfo, init?: RequestInit) => {
-    // 你的 CF 代理域名 👇 在这里填写
-    const proxyUrl = "https://gemini-proxy.xyy.workers.dev"; 
     const originalUrl = input.toString();
     const targetUrl = originalUrl.replace(
       "https://generativelanguage.googleapis.com",
@@ -47,7 +48,7 @@ const getGeminiModel = () => {
 
   return new GoogleGenAI({
     apiKey,
-    fetch: customFetch, // 强制走代理，无类型错误
+    fetch: customFetch,
   });
 };
 
@@ -128,7 +129,7 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
       <div className="exam-paper-preview" style={{
         backgroundColor: '#fff',
         padding: '30px',
-        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+        boxShadow: '0 10px 15px -3 rgba(0, 0, 0, 0.1)',
         border: '1px solid #e2e8f0',
         fontFamily: '"STSong", "SimSun", serif',
         color: '#1e293b',
@@ -169,7 +170,7 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
                 borderRadius: '20px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                boxShadow: '0 4px 6px -1px rgba(56, 189, 248, 0.4)'
+                boxShadow: '0 4px 6px -1 rgba(56, 189, 248, 0.4)'
               }}
             >
               <Maximize2 size={16} />
@@ -184,7 +185,6 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
 
 // --- Modal Component ---
 
-// Added semicolon to type definition and made children optional to fix "missing children" error in JSX usage on line 373
 const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode }) => {
   if (!isOpen) return null;
   return (
@@ -237,7 +237,7 @@ const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => 
           <div style={{
             backgroundColor: '#fff',
             padding: '80px',
-            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+            boxShadow: '0 20px 25px -5 rgba(0,0,0,0.1)',
             minHeight: '100%',
             width: '100%',
             maxWidth: '800px',
@@ -331,22 +331,12 @@ const App = () => {
       }
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash", // Updated to latest stable model
+        model: "gemini-2.0-flash",
         contents: [...historyParts, { role: 'user', parts: currentParts }],
         config: { systemInstruction: SYSTEM_INSTRUCTION },
       });
 
-      const responseText = response.text || "..."; // Fixed: response.text is a function in newer SDKs? Checking docs. Actually in @google/genai 0.1+, it might be response.text(). Let's use generic access or check.
-      // Wait, in @google/genai, response.text is a function: response.text()
-      // The previous code used response.text as a property.
-      // Let's check the previous code: const responseText = response.text || "...";
-      // In the new @google/genai SDK, generateContent returns a GenerateContentResult.
-      // accessing .text is usually a getter or function.
-      // I will assume it's a function based on my knowledge of the new SDK, OR I should verify.
-      // Actually, let's stick to the previous property access if it was working, BUT the user just upgraded the SDK to `latest` (v1.21.0).
-      // In v1.21.0, `response.text` is a function `response.text()`.
-      // So I MUST fix this too.
-
+      const responseText = response.text || "...";
       const mistakeMatch = responseText.match(/<mistake_entry>([\s\S]*?)<\/mistake_entry>/);
       if (mistakeMatch) {
         try {
@@ -471,7 +461,7 @@ const App = () => {
                     color: msg.role === 'user' ? '#0f172a' : '#f1f5f9',
                     borderRadius: '16px',
                     padding: (msg.text || '').includes('<exam_paper>') ? '0' : '16px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    boxShadow: '0 4px 6px -1 rgba(0, 0, 0, 0.1)',
                     backdropFilter: msg.role === 'model' ? 'blur(10px)' : 'none',
                   }}>
                     {msg.image && <img src={msg.image} style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px', marginBottom: '8px' }} />}
@@ -483,7 +473,7 @@ const App = () => {
               <div ref={messagesEndRef} style={{ height: '20px' }} />
             </div>
 
-            {/* Input Box - Always at the bottom, no overlay */}
+            {/* Input Box */}
             <div style={{ padding: '24px', borderTop: '1px solid var(--border-color)', backgroundColor: 'var(--bg-color)' }}>
               <div className="glass-panel" style={{ borderRadius: '16px', padding: '12px', display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
                 <button onClick={() => fileInputRef.current?.click()} style={{ padding: '8px', background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }} title="上传图片"><ImageIcon size={20} /></button>
