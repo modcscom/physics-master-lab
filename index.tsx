@@ -320,7 +320,8 @@ const App = () => {
         config: { systemInstruction: SYSTEM_INSTRUCTION },
       });
 
-      const responseText = response.text || "..."; // Fixed: response.text is a function in newer SDKs? Checking docs. Actually in @google/genai 0.1+, it might be response.text(). Let's use generic access or check.
+      // 适配新版 SDK 的标准写法
+      const responseText = typeof response.text === "function" ? await response.text() : (response.text || "..."); // Fixed: response.text is a function in newer SDKs? Checking docs. Actually in @google/genai 0.1+, it might be response.text(). Let's use generic access or check.
       // Wait, in @google/genai, response.text is a function: response.text()
       // The previous code used response.text as a property.
       // Let's check the previous code: const responseText = response.text || "...";
