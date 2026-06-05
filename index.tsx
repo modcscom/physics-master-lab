@@ -165,9 +165,31 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
 
   // 导出为 PDF
   const exportToPDF = () => {
+    // 尝试打开新窗口
     const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('请允许弹窗以使用打印功能');
+    if (!printWindow || printWindow.closed || typeof printWindow.closed === 'undefined') {
+      // 如果弹窗被阻止，使用当前窗口打印
+      const originalContent = document.body.innerHTML;
+      const printContent = document.getElementById('exam-paper-content')?.innerHTML || '';
+      
+      const printHtml = `
+        <div style="font-family: 'STSong', 'SimSun', serif; padding: 40px; line-height: 2; max-width: 800px; margin: 0 auto;">
+          <div style="text-align: center; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 30px;">
+            <div style="font-size: 12px; letter-spacing: 4px; color: #666; margin-bottom: 8px;">绝密 ★ 启用前</div>
+            <div style="font-size: 28px; font-weight: bold; margin: 12px 0;">2026年 初中物理模拟试卷</div>
+            <div style="display: flex; justify-content: center; gap: 40px; font-size: 14px; color: #555; margin-top: 12px;">
+              <span>考试时长：45分钟</span>
+              <span>满分：100分</span>
+            </div>
+          </div>
+          <div style="font-size: 16px;">${printContent}</div>
+        </div>
+      `;
+      
+      document.body.innerHTML = printHtml;
+      window.print();
+      document.body.innerHTML = originalContent;
+      window.location.reload();
       return;
     }
 
@@ -217,55 +239,76 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
               }
               return part.replace(/\\n/g, '<br>');
             }).join('');
-            setTimeout(function() { window.print(); }, 800);
+            setTimeout(function() { window.print(); }, 1000);
           })();
         </script>
       </body>
       </html>
     `;
 
+    printWindow.document.open();
     printWindow.document.write(htmlContent);
     printWindow.document.close();
   };
 
-  // 导出为 DOCX - 使用更完整的公式转换
+  // 导出为 DOCX - 使用 Word XML 格式实现真正的上标下标
   const exportToDOCX = () => {
     if (!examContent) return;
 
-    // 更完整的 LaTeX 公式转换
-    let cleanContent = examContent
-      // 先处理块级公式
-      .replace(/\$\$([\s\S]*?)\$\$/g, (match, p1) => {
-        return convertLatexToText(p1);
-      })
-      // 再处理行内公式
-      .replace(/\$([^$]+)\$/g, (match, p1) => {
-        return convertLatexToText(p1);
-      })
-      // 处理 markdown 格式
-      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-      .replace(/\*(.*?)\*/g, '<i>$1</i>')
-      .replace(/^###\s+(.*$)/gim, '<h3>$1</h3>')
-      .replace(/^##\s+(.*$)/gim, '<h2>$1</h2>')
-      .replace(/^#\s+(.*$)/gim, '<h1>$1</h1>')
-      .replace(/\\n/g, '\n')
-      .replace(/\\t/g, '\t');
+    // 转换内容为 Word XML 格式
+    const convertToWordXml = (text: string): string => {
+      // 先处理 LaTeX 公式
+      let processed = text
+        .replace(/\$\$([\s\S]*?)\$\$/g, (match, p1) => convertLatexToWordXml(p1))
+        .replace(/\$([^$]+)\$/g, (match, p1) => convertLatexToWordXml(p1));
+      
+      // 处理 markdown
+      processed = processed
+        .replace(/\*\*(.*?)\*\*/g, '<w:b><w:r><w:t>$1</w:t></w:r></w:b>')
+        .replace(/^###\s+(.*$)/gim, '<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>$1</w:t></w:r></w:p>')
+        .replace(/^##\s+(.*$)/gim, '<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>$1</w:t></w:r></w:p>')
+        .replace(/^#\s+(.*$)/gim, '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>$1</w:t></w:r></w:p>');
+      
+      // 将普通文本转换为 Word XML 段落
+      const lines = processed.split('\n');
+      return lines.map(line => {
+        if (line.trim() === '') return '<w:p><w:r><w:t></w:t></w:r></w:p>';
+        if (line.includes('<w:p>')) return line;
+        return `<w:p><w:r><w:t>${escapeXml(line)}</w:t></w:r></w:p>`;
+      }).join('');
+    };
 
-    function convertLatexToText(latex: string): string {
-      return latex
-        // 分数
-        .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
-        .replace(/\\tfrac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
-        .replace(/\\dfrac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
-        // 根号
-        .replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'ⁿ√($2)')
-        .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
-        // 上标下标
-        .replace(/\^\{([^}]+)\}/g, '^($1)')
-        .replace(/_\{([^}]+)\}/g, '_{$1}')
-        .replace(/\^([a-zA-Z0-9])/g, '^$1')
-        .replace(/_([a-zA-Z0-9])/g, '_$1')
-        // 希腊字母
+    const escapeXml = (str: string): string => {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    };
+
+    const convertLatexToWordXml = (latex: string): string => {
+      // 处理上标下标 - 使用 Word 的 vertAlign 属性
+      let result = latex;
+      
+      // 处理分数
+      result = result.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (match, num, den) => {
+        return `(${convertLatexToWordXml(num)}/${convertLatexToWordXml(den)})`;
+      });
+      
+      // 处理根号
+      result = result.replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'ⁿ√($2)');
+      result = result.replace(/\\sqrt\{([^}]+)\}/g, '√($1)');
+      
+      // 处理上标 (支持多字符)
+      result = result.replace(/\^\{([^}]+)\}/g, '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>$1</w:t></w:r>');
+      result = result.replace(/\^([a-zA-Z0-9])/g, '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>$1</w:t></w:r>');
+      
+      // 处理下标 (支持多字符)
+      result = result.replace(/_\{([^}]+)\}/g, '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>$1</w:t></w:r>');
+      result = result.replace(/_([a-zA-Z0-9])/g, '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>$1</w:t></w:r>');
+      
+      // 希腊字母
+      result = result
         .replace(/\\rho/g, 'ρ')
         .replace(/\\pi/g, 'π')
         .replace(/\\alpha/g, 'α')
@@ -286,90 +329,95 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
         .replace(/\\psi/g, 'ψ')
         .replace(/\\eta/g, 'η')
         .replace(/\\xi/g, 'ξ')
-        .replace(/\\zeta/g, 'ζ')
-        // 运算符
+        .replace(/\\zeta/g, 'ζ');
+      
+      // 运算符
+      result = result
         .replace(/\\times/g, '×')
         .replace(/\\div/g, '÷')
         .replace(/\\cdot/g, '·')
         .replace(/\\pm/g, '±')
-        .replace(/\\mp/g, '∓')
         .replace(/\\leq/g, '≤')
         .replace(/\\geq/g, '≥')
         .replace(/\\neq/g, '≠')
         .replace(/\\approx/g, '≈')
-        .replace(/\\equiv/g, '≡')
-        .replace(/\\sim/g, '~')
-        .replace(/\\propto/g, '∝')
         .replace(/\\infty/g, '∞')
-        .replace(/\\partial/g, '∂')
-        .replace(/\\nabla/g, '∇')
-        // 箭头
+        .replace(/\\partial/g, '∂');
+      
+      // 箭头
+      result = result
         .replace(/\\rightarrow/g, '→')
-        .replace(/\\leftarrow/g, '←')
-        .replace(/\\Rightarrow/g, '⇒')
-        .replace(/\\Leftarrow/g, '⇐')
-        .replace(/\\leftrightarrow/g, '↔')
-        // 求和积分
-        .replace(/\\sum/g, 'Σ')
-        .replace(/\\int/g, '∫')
-        .replace(/\\prod/g, '∏')
-        // 括号
-        .replace(/\\left\(/g, '(')
-        .replace(/\\right\)/g, ')')
-        .replace(/\\left\[/g, '[')
-        .replace(/\\right\]/g, ']')
-        .replace(/\\left\{/g, '{')
-        .replace(/\\right\}/g, '}')
-        .replace(/\\\{/g, '{')
-        .replace(/\\\}/g, '}')
-        // 其他符号
-        .replace(/\\degree/g, '°')
-        .replace(/\\circ/g, '°')
-        .replace(/\\prime/g, '′')
-        .replace(/\\hbar/g, 'ℏ')
+        .replace(/\\leftarrow/g, '←');
+      
+      // 其他符号
+      result = result
         .replace(/\\text\{([^}]+)\}/g, '$1')
         .replace(/\\mathrm\{([^}]+)\}/g, '$1')
-        .replace(/\\mathbf\{([^}]+)\}/g, '<b>$1</b>')
-        .replace(/\\mathit\{([^}]+)\}/g, '<i>$1</i>')
-        // 空格
         .replace(/\\,/g, ' ')
-        .replace(/\\;/g, '  ')
-        .replace(/\\:/g, ' ')
-        .replace(/\\quad/g, '    ')
-        .replace(/\\qquad/g, '        ')
-        // 移除多余的反斜杠
-        .replace(/\\([^a-zA-Z])/g, '$1');
-    }
+        .replace(/\\;/g, '  ');
+      
+      // 如果结果包含 Word XML 标记，包装在段落中
+      if (result.includes('<w:r>')) {
+        return `<w:p>${result}</w:p>`;
+      }
+      
+      return escapeXml(result);
+    };
 
-    const html = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-      <head>
-        <meta charset="utf-8">
-        <title>物理模拟试卷</title>
-        <style>
-          body { font-family: "SimSun", serif; font-size: 12pt; line-height: 1.8; }
-          .header { text-align: center; border-bottom: 1px solid #000; padding-bottom: 12pt; margin-bottom: 24pt; }
-          .confidential { font-size: 10pt; letter-spacing: 2pt; margin-bottom: 6pt; }
-          .title { font-size: 18pt; font-weight: bold; margin: 8pt 0; }
-          .info { text-align: center; font-size: 11pt; margin-top: 8pt; }
-          .content { margin-top: 20pt; }
-          h1 { font-size: 16pt; font-weight: bold; }
-          h2 { font-size: 14pt; font-weight: bold; }
-          h3 { font-size: 12pt; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="confidential">绝密 ★ 启用前</div>
-          <div class="title">2026年 初中物理模拟试卷</div>
-          <div class="info">考试时长：45分钟　　　满分：100分</div>
-        </div>
-        <div class="content">${cleanContent.replace(/\n/g, '<br>')}</div>
-      </body>
-      </html>
-    `;
+    const bodyContent = convertToWordXml(examContent);
 
-    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    // 构建完整的 Word XML 文档
+    const wordXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<?mso-application progid="Word.Document"?>
+<w:wordDocument xmlns:w="http://schemas.microsoft.com/office/word/2003/wordml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:wx="http://schemas.microsoft.com/office/word/2003/auxHint">
+  <w:body>
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="center"/>
+        <w:pBdr>
+          <w:bottom w:val="single" w:sz="4" w:space="1" w:color="auto"/>
+        </w:pBdr>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:sz w:val="16"/>
+        </w:rPr>
+        <w:t>绝密 ★ 启用前</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="center"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:b/>
+          <w:sz w:val="36"/>
+        </w:rPr>
+        <w:t>2026年 初中物理模拟试卷</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:jc w:val="center"/>
+      </w:pPr>
+      <w:r>
+        <w:rPr>
+          <w:sz w:val="22"/>
+        </w:rPr>
+        <w:t>考试时长：45分钟　　　满分：100分</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:r>
+        <w:t></w:t>
+      </w:r>
+    </w:p>
+    ${bodyContent}
+  </w:body>
+</w:wordDocument>`;
+
+    const blob = new Blob([wordXml], { type: 'application/vnd.ms-word' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -621,15 +669,17 @@ const App = () => {
 
         {/* Full Screen Exam Modal */}
         <Modal isOpen={!!activeExamContent} onClose={() => setActiveExamContent(null)} examContent={activeExamContent || ''}>
-          <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '20px', marginBottom: '32px', textAlign: 'center' }}>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', letterSpacing: '6px', color: '#1e293b', marginBottom: '12px' }}>绝密 ★ 启用前</div>
-            <h1 style={{ fontSize: '32px', margin: '0 0 16px 0', color: '#0f172a' }}>2026年 初中物理模拟试卷</h1>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', fontSize: '15px', color: '#475569' }}>
-              <span>考试时长：45分钟</span>
-              <span>满分：100分</span>
+          <div id="exam-paper-content">
+            <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '20px', marginBottom: '32px', textAlign: 'center' }}>
+              <div style={{ fontSize: '14px', fontWeight: 'bold', letterSpacing: '6px', color: '#1e293b', marginBottom: '12px' }}>绝密 ★ 启用前</div>
+              <h1 style={{ fontSize: '32px', margin: '0 0 16px 0', color: '#0f172a' }}>2026年 初中物理模拟试卷</h1>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '40px', fontSize: '15px', color: '#475569' }}>
+                <span>考试时长：45分钟</span>
+                <span>满分：100分</span>
+              </div>
             </div>
+            <MathText text={activeExamContent || ""} style={{ lineHeight: 2, fontSize: '18px', color: '#1e293b' }} />
           </div>
-          <MathText text={activeExamContent || ""} style={{ lineHeight: 2, fontSize: '18px', color: '#1e293b' }} />
         </Modal>
 
         {currentView === 'dashboard' && (
