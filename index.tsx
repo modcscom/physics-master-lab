@@ -160,12 +160,16 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
 // --- Modal Component ---
 
 const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode; examContent?: string }) => {
+  const [zoom, setZoom] = useState(100);
   if (!isOpen) return null;
 
   // 导出为 PDF
   const exportToPDF = () => {
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!printWindow) {
+      alert('请允许弹窗以使用打印功能');
+      return;
+    }
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -173,7 +177,6 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
       <head>
         <meta charset="UTF-8">
         <title>物理模拟试卷</title>
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"><\/script>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
         <style>
           @page { size: A4; margin: 20mm; }
@@ -195,13 +198,13 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
             <span>满分：100分</span>
           </div>
         </div>
-        <div class="content" id="content">${examContent?.replace(/\n/g, '<br>') || ''}</div>
+        <div class="content" id="content"></div>
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
         <script>
-          document.addEventListener('DOMContentLoaded', function() {
+          (function() {
             const content = document.getElementById('content');
-            const text = content.innerHTML;
-            // 渲染 LaTeX 公式
-            const parts = text.split(/(\\$\\$.*?\\$\\$|\\$.*?\\$)/s);
+            const text = ${JSON.stringify(examContent || '')};
+            const parts = text.split(/(\$\$.*?\$\$|\$.*?\$)/s);
             content.innerHTML = parts.map(function(part) {
               if (part.startsWith('$$') && part.endsWith('$$')) {
                 try {
@@ -212,11 +215,11 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
                   return katex.renderToString(part.slice(1, -1), { displayMode: false, throwOnError: false });
                 } catch (e) { return part; }
               }
-              return part;
+              return part.replace(/\\n/g, '<br>');
             }).join('');
-            setTimeout(function() { window.print(); }, 500);
-          });
-        <\/script>
+            setTimeout(function() { window.print(); }, 800);
+          })();
+        </script>
       </body>
       </html>
     `;
@@ -225,41 +228,118 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
     printWindow.document.close();
   };
 
-  // 导出为 DOCX
+  // 导出为 DOCX - 使用更完整的公式转换
   const exportToDOCX = () => {
     if (!examContent) return;
 
-    // 清理 LaTeX 标记，转换为纯文本
-    const cleanContent = examContent
-      .replace(/\$\$(.*?)\$\$/gs, '$1')
-      .replace(/\$(.*?)\$/g, '$1')
-      .replace(/\\frac\{(.*?)\}\{(.*?)\}/g, '($1/$2)')
-      .replace(/\\sqrt\{(.*?)\}/g, '√($1)')
-      .replace(/\\times/g, '×')
-      .replace(/\\div/g, '÷')
-      .replace(/\\cdot/g, '·')
-      .replace(/\\pi/g, 'π')
-      .replace(/\\Delta/g, 'Δ')
-      .replace(/\\alpha/g, 'α')
-      .replace(/\\beta/g, 'β')
-      .replace(/\\gamma/g, 'γ')
-      .replace(/\\theta/g, 'θ')
-      .replace(/\\omega/g, 'ω')
-      .replace(/\\rightarrow/g, '→')
-      .replace(/\\leftarrow/g, '←')
-      .replace(/\\leq/g, '≤')
-      .replace(/\\geq/g, '≥')
-      .replace(/\\neq/g, '≠')
-      .replace(/\\approx/g, '≈')
-      .replace(/\\infty/g, '∞')
-      .replace(/\\sum/g, 'Σ')
-      .replace(/\\int/g, '∫')
-      .replace(/\\partial/g, '∂')
-      .replace(/\\\\/g, '\n')
-      .replace(/\\_/g, '_')
-      .replace(/\\\{/g, '{')
-      .replace(/\\\}/g, '}')
-      .replace(/\\text\{(.*?)\}/g, '$1');
+    // 更完整的 LaTeX 公式转换
+    let cleanContent = examContent
+      // 先处理块级公式
+      .replace(/\$\$([\s\S]*?)\$\$/g, (match, p1) => {
+        return convertLatexToText(p1);
+      })
+      // 再处理行内公式
+      .replace(/\$([^$]+)\$/g, (match, p1) => {
+        return convertLatexToText(p1);
+      })
+      // 处理 markdown 格式
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/^###\s+(.*$)/gim, '<h3>$1</h3>')
+      .replace(/^##\s+(.*$)/gim, '<h2>$1</h2>')
+      .replace(/^#\s+(.*$)/gim, '<h1>$1</h1>')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t');
+
+    function convertLatexToText(latex: string): string {
+      return latex
+        // 分数
+        .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+        .replace(/\\tfrac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+        .replace(/\\dfrac\{([^}]+)\}\{([^}]+)\}/g, '($1/$2)')
+        // 根号
+        .replace(/\\sqrt\[([^\]]+)\]\{([^}]+)\}/g, 'ⁿ√($2)')
+        .replace(/\\sqrt\{([^}]+)\}/g, '√($1)')
+        // 上标下标
+        .replace(/\^\{([^}]+)\}/g, '^($1)')
+        .replace(/_\{([^}]+)\}/g, '_{$1}')
+        .replace(/\^([a-zA-Z0-9])/g, '^$1')
+        .replace(/_([a-zA-Z0-9])/g, '_$1')
+        // 希腊字母
+        .replace(/\\rho/g, 'ρ')
+        .replace(/\\pi/g, 'π')
+        .replace(/\\alpha/g, 'α')
+        .replace(/\\beta/g, 'β')
+        .replace(/\\gamma/g, 'γ')
+        .replace(/\\delta/g, 'δ')
+        .replace(/\\Delta/g, 'Δ')
+        .replace(/\\theta/g, 'θ')
+        .replace(/\\omega/g, 'ω')
+        .replace(/\\lambda/g, 'λ')
+        .replace(/\\mu/g, 'μ')
+        .replace(/\\nu/g, 'ν')
+        .replace(/\\sigma/g, 'σ')
+        .replace(/\\Sigma/g, 'Σ')
+        .replace(/\\tau/g, 'τ')
+        .replace(/\\phi/g, 'φ')
+        .replace(/\\Phi/g, 'Φ')
+        .replace(/\\psi/g, 'ψ')
+        .replace(/\\eta/g, 'η')
+        .replace(/\\xi/g, 'ξ')
+        .replace(/\\zeta/g, 'ζ')
+        // 运算符
+        .replace(/\\times/g, '×')
+        .replace(/\\div/g, '÷')
+        .replace(/\\cdot/g, '·')
+        .replace(/\\pm/g, '±')
+        .replace(/\\mp/g, '∓')
+        .replace(/\\leq/g, '≤')
+        .replace(/\\geq/g, '≥')
+        .replace(/\\neq/g, '≠')
+        .replace(/\\approx/g, '≈')
+        .replace(/\\equiv/g, '≡')
+        .replace(/\\sim/g, '~')
+        .replace(/\\propto/g, '∝')
+        .replace(/\\infty/g, '∞')
+        .replace(/\\partial/g, '∂')
+        .replace(/\\nabla/g, '∇')
+        // 箭头
+        .replace(/\\rightarrow/g, '→')
+        .replace(/\\leftarrow/g, '←')
+        .replace(/\\Rightarrow/g, '⇒')
+        .replace(/\\Leftarrow/g, '⇐')
+        .replace(/\\leftrightarrow/g, '↔')
+        // 求和积分
+        .replace(/\\sum/g, 'Σ')
+        .replace(/\\int/g, '∫')
+        .replace(/\\prod/g, '∏')
+        // 括号
+        .replace(/\\left\(/g, '(')
+        .replace(/\\right\)/g, ')')
+        .replace(/\\left\[/g, '[')
+        .replace(/\\right\]/g, ']')
+        .replace(/\\left\{/g, '{')
+        .replace(/\\right\}/g, '}')
+        .replace(/\\\{/g, '{')
+        .replace(/\\\}/g, '}')
+        // 其他符号
+        .replace(/\\degree/g, '°')
+        .replace(/\\circ/g, '°')
+        .replace(/\\prime/g, '′')
+        .replace(/\\hbar/g, 'ℏ')
+        .replace(/\\text\{([^}]+)\}/g, '$1')
+        .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+        .replace(/\\mathbf\{([^}]+)\}/g, '<b>$1</b>')
+        .replace(/\\mathit\{([^}]+)\}/g, '<i>$1</i>')
+        // 空格
+        .replace(/\\,/g, ' ')
+        .replace(/\\;/g, '  ')
+        .replace(/\\:/g, ' ')
+        .replace(/\\quad/g, '    ')
+        .replace(/\\qquad/g, '        ')
+        // 移除多余的反斜杠
+        .replace(/\\([^a-zA-Z])/g, '$1');
+    }
 
     const html = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -273,6 +353,9 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
           .title { font-size: 18pt; font-weight: bold; margin: 8pt 0; }
           .info { text-align: center; font-size: 11pt; margin-top: 8pt; }
           .content { margin-top: 20pt; }
+          h1 { font-size: 16pt; font-weight: bold; }
+          h2 { font-size: 14pt; font-weight: bold; }
+          h3 { font-size: 12pt; font-weight: bold; }
         </style>
       </head>
       <body>
@@ -310,13 +393,13 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '40px'
+      padding: '20px'
     }}>
       <div className="fade-in" style={{
         backgroundColor: '#fff',
         width: '100%',
-        maxWidth: '900px',
-        height: '90%',
+        maxWidth: '1000px',
+        height: '95%',
         borderRadius: '12px',
         position: 'relative',
         display: 'flex',
@@ -324,7 +407,7 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
         overflow: 'hidden'
       }}>
         <div style={{
-          padding: '16px 24px',
+          padding: '12px 20px',
           borderBottom: '1px solid #e2e8f0',
           display: 'flex',
           justifyContent: 'space-between',
@@ -334,7 +417,12 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
           <h3 style={{ margin: 0, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PenTool size={18} color="#38bdf8" /> 智能生成的试卷
           </h3>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', marginRight: '8px' }}>缩放:</span>
+            <button onClick={() => setZoom(z => Math.max(50, z - 10))} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: '12px' }}>-</button>
+            <span style={{ fontSize: '12px', color: '#1e293b', minWidth: '40px', textAlign: 'center' }}>{zoom}%</span>
+            <button onClick={() => setZoom(z => Math.min(200, z + 10))} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: '12px' }}>+</button>
+            <div style={{ width: '1px', height: '20px', background: '#e2e8f0', margin: '0 8px' }}></div>
             <button onClick={exportToPDF} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
               <Printer size={16} /> 打印/PDF
             </button>
@@ -346,16 +434,19 @@ const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; on
             </button>
           </div>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '60px', backgroundColor: '#f1f5f9' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '20px', backgroundColor: '#f1f5f9', display: 'flex', justifyContent: 'center' }}>
           <div style={{
             backgroundColor: '#fff',
-            padding: '80px',
+            padding: '60px',
             boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
-            minHeight: '100%',
+            minHeight: 'fit-content',
             width: '100%',
             maxWidth: '800px',
             margin: '0 auto',
-            fontFamily: 'serif'
+            fontFamily: 'serif',
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top center',
+            transition: 'transform 0.2s ease'
           }}>
             {children}
           </div>
