@@ -21,7 +21,8 @@ import {
   PenTool,
   Maximize2,
   Download,
-  Printer
+  Printer,
+  FileText
 } from "lucide-react";
 
 // --- 核心配置：完全走 Workers 反代，不再使用 window.fetch 拦截器 ---
@@ -158,8 +159,144 @@ const ExamPaper = ({ content, onExpand }: { content: string, onExpand?: () => vo
 
 // --- Modal Component ---
 
-const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode }) => {
+const Modal = ({ isOpen, onClose, children, examContent }: { isOpen: boolean; onClose: () => void; children?: React.ReactNode; examContent?: string }) => {
   if (!isOpen) return null;
+
+  // 导出为 PDF
+  const exportToPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>物理模拟试卷</title>
+        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"><\/script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+        <style>
+          @page { size: A4; margin: 20mm; }
+          body { font-family: "STSong", "SimSun", serif; padding: 40px; line-height: 2; }
+          .header { text-align: center; border-bottom: 1px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+          .confidential { font-size: 12px; letter-spacing: 4px; color: #666; margin-bottom: 8px; }
+          .title { font-size: 28px; font-weight: bold; margin: 12px 0; }
+          .info { display: flex; justify-content: center; gap: 40px; font-size: 14px; color: #555; margin-top: 12px; }
+          .content { font-size: 16px; }
+          .katex { font-size: 1.1em; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="confidential">绝密 ★ 启用前</div>
+          <div class="title">2026年 初中物理模拟试卷</div>
+          <div class="info">
+            <span>考试时长：45分钟</span>
+            <span>满分：100分</span>
+          </div>
+        </div>
+        <div class="content" id="content">${examContent?.replace(/\n/g, '<br>') || ''}</div>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            const content = document.getElementById('content');
+            const text = content.innerHTML;
+            // 渲染 LaTeX 公式
+            const parts = text.split(/(\\$\\$.*?\\$\\$|\\$.*?\\$)/s);
+            content.innerHTML = parts.map(function(part) {
+              if (part.startsWith('$$') && part.endsWith('$$')) {
+                try {
+                  return katex.renderToString(part.slice(2, -2), { displayMode: true, throwOnError: false });
+                } catch (e) { return part; }
+              } else if (part.startsWith('$') && part.endsWith('$')) {
+                try {
+                  return katex.renderToString(part.slice(1, -1), { displayMode: false, throwOnError: false });
+                } catch (e) { return part; }
+              }
+              return part;
+            }).join('');
+            setTimeout(function() { window.print(); }, 500);
+          });
+        <\/script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
+  // 导出为 DOCX
+  const exportToDOCX = () => {
+    if (!examContent) return;
+
+    // 清理 LaTeX 标记，转换为纯文本
+    const cleanContent = examContent
+      .replace(/\$\$(.*?)\$\$/gs, '$1')
+      .replace(/\$(.*?)\$/g, '$1')
+      .replace(/\\frac\{(.*?)\}\{(.*?)\}/g, '($1/$2)')
+      .replace(/\\sqrt\{(.*?)\}/g, '√($1)')
+      .replace(/\\times/g, '×')
+      .replace(/\\div/g, '÷')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\pi/g, 'π')
+      .replace(/\\Delta/g, 'Δ')
+      .replace(/\\alpha/g, 'α')
+      .replace(/\\beta/g, 'β')
+      .replace(/\\gamma/g, 'γ')
+      .replace(/\\theta/g, 'θ')
+      .replace(/\\omega/g, 'ω')
+      .replace(/\\rightarrow/g, '→')
+      .replace(/\\leftarrow/g, '←')
+      .replace(/\\leq/g, '≤')
+      .replace(/\\geq/g, '≥')
+      .replace(/\\neq/g, '≠')
+      .replace(/\\approx/g, '≈')
+      .replace(/\\infty/g, '∞')
+      .replace(/\\sum/g, 'Σ')
+      .replace(/\\int/g, '∫')
+      .replace(/\\partial/g, '∂')
+      .replace(/\\\\/g, '\n')
+      .replace(/\\_/g, '_')
+      .replace(/\\\{/g, '{')
+      .replace(/\\\}/g, '}')
+      .replace(/\\text\{(.*?)\}/g, '$1');
+
+    const html = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset="utf-8">
+        <title>物理模拟试卷</title>
+        <style>
+          body { font-family: "SimSun", serif; font-size: 12pt; line-height: 1.8; }
+          .header { text-align: center; border-bottom: 1px solid #000; padding-bottom: 12pt; margin-bottom: 24pt; }
+          .confidential { font-size: 10pt; letter-spacing: 2pt; margin-bottom: 6pt; }
+          .title { font-size: 18pt; font-weight: bold; margin: 8pt 0; }
+          .info { text-align: center; font-size: 11pt; margin-top: 8pt; }
+          .content { margin-top: 20pt; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="confidential">绝密 ★ 启用前</div>
+          <div class="title">2026年 初中物理模拟试卷</div>
+          <div class="info">考试时长：45分钟　　　满分：100分</div>
+        </div>
+        <div class="content">${cleanContent.replace(/\n/g, '<br>')}</div>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '物理模拟试卷.doc';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={{
       position: 'fixed',
@@ -197,9 +334,12 @@ const Modal = ({ isOpen, onClose, children }: { isOpen: boolean; onClose: () => 
           <h3 style={{ margin: 0, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PenTool size={18} color="#38bdf8" /> 智能生成的试卷
           </h3>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px' }}>
-              <Printer size={16} /> 打印
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={exportToPDF} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <Printer size={16} /> 打印/PDF
+            </button>
+            <button onClick={exportToDOCX} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', color: '#1e293b' }}>
+              <FileText size={16} /> Word
             </button>
             <button onClick={onClose} style={{ padding: '8px', borderRadius: '6px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}>
               <X size={20} />
@@ -389,7 +529,7 @@ const App = () => {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
         {/* Full Screen Exam Modal */}
-        <Modal isOpen={!!activeExamContent} onClose={() => setActiveExamContent(null)}>
+        <Modal isOpen={!!activeExamContent} onClose={() => setActiveExamContent(null)} examContent={activeExamContent || ''}>
           <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '20px', marginBottom: '32px', textAlign: 'center' }}>
             <div style={{ fontSize: '14px', fontWeight: 'bold', letterSpacing: '6px', color: '#1e293b', marginBottom: '12px' }}>绝密 ★ 启用前</div>
             <h1 style={{ fontSize: '32px', margin: '0 0 16px 0', color: '#0f172a' }}>2026年 初中物理模拟试卷</h1>
